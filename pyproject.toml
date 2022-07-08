@@ -1,0 +1,68 @@
+[tool.poetry]
+name = "loudhailer"
+version = "0.1.0"
+description = ""
+authors = ["CloudBlue LLC"]
+license = "Apache-2.0"
+packages = [
+    { include = "loudhailer" },
+]
+readme = "./README.md"
+homepage = "https://connect.cloudblue.com"
+repository = "https://github.com/cloudblue/loudhailer"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Utilities",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries",
+    "License :: OSI Approved :: Apache Software License"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<4"
+aiormq = "^6.3.3"
+channels = { version = "3.*", optional = true }
+"backports.zoneinfo" = { version = "*", markers = "python_version < '3.9'" }
+tzdata = { version = "*", markers = "sys_platform == 'win32'" }
+
+[tool.poetry.dev-dependencies]
+ipython = "^7.21.0"
+pytest = "^6.1.2"
+pytest-cov = "^2.10.1"
+pytest-mock = "^3.3.1"
+coverage = {extras = ["toml"], version = "5.*"}
+flake8 = "~3.8"
+flake8-bugbear = "~20"
+flake8-cognitive-complexity = "^0.1"
+flake8-commas = "~2.0"
+flake8-future-import = "~0.4"
+flake8-import-order = "~0.18"
+flake8-broken-line = "~0.4"
+fs = "^2.4.12"
+responses = "^0.21.0"
+pytest-httpx = "^0.21.0"
+pytest-asyncio = "^0.18.3"
+fastapi = "0.*"
+channels = "3.*"
+websockets = "10.*"
+uvicorn = "0.*"
+
+[tool.poetry.extras]
+channels = ["channels"]
+
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+addopts = "--cov=loudhailer --cov-report=term-missing:skip-covered --cov-report=html --cov-report=xml"
+asyncio_mode = "strict"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
