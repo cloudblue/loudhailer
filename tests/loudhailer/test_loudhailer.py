@@ -8,26 +8,46 @@ import asyncio
 import pytest
 
 from loudhailer import Loudhailer
-from loudhailer.dataclasses import Message
+from loudhailer.dataclasses import Envelope
 from loudhailer.loudhailer import default_deserialize, default_serialize, MessageIterator
 
 
-def test_initialization(mocker, test_backend):
+def test_initialization(test_backend):
     mocked_backend = test_backend()
-    Loudhailer('test://')
 
-    mocked_backend.assert_called_once_with(
-        'test://',
-        default_serialize,
-        default_deserialize,
-    )
+    loudhailer = Loudhailer('test://')
+
+    mocked_backend.assert_called_once_with('test://')
+    assert loudhailer._serialize_func == default_serialize
+    assert loudhailer._deserialize_func == default_deserialize
 
 
-def test_initialization_custom_serialization(mocker, test_backend):
+def test_initialization_custom_backend(mocker):
+    mocked_backend = mocker.MagicMock()
+
+    Loudhailer('testsss://', extra_backends={'testsss': mocked_backend})
+
+    mocked_backend.assert_called_once_with('testsss://')
+
+
+def test_initialization_overwrite_backend(mocker):
+    mocked_backend = mocker.MagicMock()
+
+    Loudhailer('test://', extra_backends={'test': mocked_backend})
+
+    mocked_backend.assert_called_once_with('test://')
+
+
+def test_initialization_custom_serialization(test_backend):
     mocked_backend = test_backend()
-    mocked_serialize = mocker.MagicMock()
-    mocked_deserialize = mocker.MagicMock()
-    Loudhailer(
+
+    def mocked_serialize(envelope):
+        pass
+
+    def mocked_deserialize(envelope):
+        pass
+
+    loudhailer = Loudhailer(
         'test://',
         serialize_func=mocked_serialize,
         deserialize_func=mocked_deserialize,
@@ -35,9 +55,33 @@ def test_initialization_custom_serialization(mocker, test_backend):
 
     mocked_backend.assert_called_once_with(
         'test://',
-        mocked_serialize,
-        mocked_deserialize,
     )
+    assert loudhailer._serialize_func == mocked_serialize
+    assert loudhailer._deserialize_func == mocked_deserialize
+
+
+def test_initialization_invalid_serialize_func(test_backend):
+    test_backend()
+
+    with pytest.raises(AssertionError) as exc:
+        Loudhailer(
+            'test://',
+            serialize_func='a string',
+        )
+
+    assert str(exc.value) == 'Serialize func must be a callable'
+
+
+def test_initialization_invalid_deserialize_func(test_backend):
+    test_backend()
+
+    with pytest.raises(AssertionError) as exc:
+        Loudhailer(
+            'test://',
+            deserialize_func='a string',
+        )
+
+    assert str(exc.value) == 'Deserialize func must be a callable'
 
 
 def test_initialization_unsupported_backend():
@@ -123,9 +167,11 @@ async def test_publish(mocker, test_backend):
     loudhailer = Loudhailer('test://')
     loudhailer._backend = mocker.MagicMock(publish=mocked_publish)
 
-    await loudhailer.publish('group', 'message')
+    await loudhailer.publish('recipient_type', 'recipient', {'test': 'message'})
 
-    mocked_publish.assert_awaited_once_with('group', 'message')
+    assert mocked_publish.mock_calls[0].args[0].recipient_type == 'recipient_type'
+    assert mocked_publish.mock_calls[0].args[0].recipient == 'recipient'
+    assert mocked_publish.mock_calls[0].args[0].message == b'{"test": "message"}'
 
 
 @pytest.mark.asyncio
@@ -242,7 +288,13 @@ async def test_listener(mocker, test_backend):
     test_backend()
 
     queue = asyncio.Queue()
-    await queue.put(Message('my_group', 'an_item'))
+    await queue.put(
+        Envelope(
+            recipient_type='group',
+            recipient='my_group',
+            message=b'{"test": "data"}',
+        ),
+    )
 
     loudhailer = Loudhailer('test://')
     loudhailer._backend = mocker.MagicMock(next_published=queue.get)
@@ -257,5 +309,5 @@ async def test_listener(mocker, test_backend):
     except asyncio.CancelledError:
         pass
 
-    assert await loudhailer.receive_message('subscriber1') == 'an_item'
-    assert await loudhailer.receive_message('subscriber2') == 'an_item'
+    assert await loudhailer.receive_message('subscriber1') == {'test': 'data'}
+    assert await loudhailer.receive_message('subscriber2') == {'test': 'data'}

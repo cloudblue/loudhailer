@@ -4,10 +4,16 @@
 # Copyright (c) 2022 Ingram Micro. All Rights Reserved.
 #
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
-class Message:
-    group: str
-    data: Optional[dict]
+class Envelope:
+    recipient: str
+    recipient_type: Optional[str]
+    message: Optional[Any]
+
+
+class RecipientType:
+    DIRECT = 'direct'
+    GROUP = 'group'

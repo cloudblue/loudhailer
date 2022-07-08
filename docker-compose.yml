@@ -16,5 +16,7 @@ services:
     command: >
       bash -c 'dockerize -wait tcp://rabbit:5672 -timeout 50s &&
       pytest tests/e2e'
+    env:
+      RABBITMQ_URL: amqp://admin:1q2w3e@rabbit/loudhailer
     depends_on:
       - rabbit

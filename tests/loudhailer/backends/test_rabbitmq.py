@@ -4,7 +4,6 @@
 # Copyright (c) 2022 Ingram Micro. All Rights Reserved.
 #
 import asyncio
-import json
 import logging
 
 import aiormq
@@ -12,16 +11,12 @@ import pytest
 
 from loudhailer.backends.base import PublishError
 from loudhailer.backends.rabbitmq import RMQBackend
+from loudhailer.dataclasses import Envelope
 
 
 def test_initialization(mocker):
-    serialize_func = mocker.MagicMock()
-    deserialize_func = mocker.MagicMock()
-    backend = RMQBackend('test://', serialize_func, deserialize_func)
-
+    backend = RMQBackend('test://')
     assert backend._url == 'test://'
-    assert backend._serialize_func == serialize_func
-    assert backend._deserialize_func == deserialize_func
     assert len(backend._queue_name) == 19
 
 
@@ -29,8 +24,6 @@ def test_initialization_queue_name(mocker):
     mocker.patch('loudhailer.backends.rabbitmq.rand_string', return_value='suffix')
     backend = RMQBackend(
         'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
         queue_prefix='my_prefix',
     )
     assert backend._queue_name == 'my_prefix_suffix'
@@ -42,19 +35,17 @@ async def test_on_message(mocker):
         routing_key='group',
         body=b'{"test": "data"}',
     )
+    mocked_msg.header.properties.message_type = 'group'
     mocked_msg.channel.basic_ack = mocker.AsyncMock()
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        lambda group, body: json.loads(body.decode('utf-8')),
-    )
+    backend = RMQBackend('test://')
 
     await backend.on_message(mocked_msg)
 
     msg = await backend._listen_queue.get()
-    assert msg.group == 'group'
-    assert msg.data == {'test': 'data'}
+    assert msg.recipient_type == 'group'
+    assert msg.recipient == 'group'
+    assert msg.message == b'{"test": "data"}'
 
     mocked_msg.channel.basic_ack.assert_awaited_once_with(mocked_msg.delivery.delivery_tag)
 
@@ -69,12 +60,7 @@ async def test_connect(mocker, caplog):
 
     mocker.patch.object(RMQBackend, '_consumer', new=consumer)
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
-
+    backend = RMQBackend('test://')
     backend._ready_event = ready_event
 
     with caplog.at_level(logging.INFO):
@@ -86,11 +72,7 @@ async def test_connect(mocker, caplog):
 
 @pytest.mark.asyncio
 async def test_disconnect(mocker):
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
 
     async def consumer():
         while backend._consumer_event.is_set():
@@ -111,8 +93,6 @@ async def test_disconnect(mocker):
 async def test_subscribe(mocker):
     backend = RMQBackend(
         'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
     )
     backend._consumer_channel = mocker.MagicMock(queue_bind=mocker.AsyncMock())
 
@@ -126,8 +106,6 @@ async def test_subscribe(mocker):
 async def test_unsubscribe(mocker):
     backend = RMQBackend(
         'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
     )
     backend._consumer_channel = mocker.MagicMock(queue_unbind=mocker.AsyncMock())
 
@@ -141,37 +119,43 @@ async def test_unsubscribe(mocker):
 async def test_publish(mocker):
     mocked_conn = mocker.patch.object(RMQBackend, '_ensure_connection')
     mocked_chan = mocker.patch.object(RMQBackend, '_ensure_producer_channel')
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(return_value=b'serialized message'),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._producer_channel = mocker.MagicMock(basic_publish=mocker.AsyncMock())
 
-    await backend.publish('group', 'message')
+    await backend.publish(
+        Envelope(
+            recipient_type='group',
+            recipient='group',
+            message=b'message',
+        ),
+    )
 
     backend._producer_channel.basic_publish.assert_awaited_once_with(
-        b'serialized message', exchange=backend._exchange_name, routing_key='group',
+        b'message',
+        exchange=backend._exchange_name,
+        routing_key='group',
+        properties=mocker.ANY,  # TODO check properties
     )
     mocked_conn.assert_awaited_once()
     mocked_chan.assert_awaited_once()
-    backend._serialize_func.assert_called_once_with('group', 'message')
 
 
 @pytest.mark.asyncio
 async def test_publish_retry(mocker):
     mocked_conn = mocker.patch.object(RMQBackend, '_ensure_connection')
     mocked_chan = mocker.patch.object(RMQBackend, '_ensure_producer_channel')
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(return_value=b'serialized message'),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._producer_channel = mocker.MagicMock(basic_publish=mocker.AsyncMock(
         side_effect=[RuntimeError('publish error'), None],
     ))
 
-    await backend.publish('group', 'message')
+    await backend.publish(
+        Envelope(
+            recipient_type='group',
+            recipient='group',
+            message=b'message',
+        ),
+    )
 
     assert mocked_conn.call_count == 2
     assert mocked_chan.call_count == 2
@@ -183,39 +167,34 @@ async def test_publish_max_retries_exceeded(mocker):
     mocker.patch.object(RMQBackend, '_ensure_producer_channel')
     backend = RMQBackend(
         'test://',
-        mocker.MagicMock(return_value=b'serialized message'),
-        mocker.MagicMock(),
         publish_retries=2,
     )
     backend._producer_channel = mocker.MagicMock(basic_publish=mocker.AsyncMock(
         side_effect=[RuntimeError('publish error'), RuntimeError('publish error')],
     ))
     with pytest.raises(PublishError) as exc:
-        await backend.publish('group', 'message')
+        await backend.publish(
+            Envelope(
+                recipient_type='group',
+                recipient='group',
+                message=b'message',
+            ),
+        )
 
     assert str(exc.value) == 'Max retries exceeded'
 
 
 @pytest.mark.asyncio
 async def test_next_published(mocker):
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(return_value=b'serialized message'),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     await backend._listen_queue.put('my message')
-
     assert await backend.next_published() == 'my message'
 
 
 @pytest.mark.asyncio
 async def test_ensure_connection(mocker):
     mocked_connect = mocker.patch.object(RMQBackend, '_connect')
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     await backend._ensure_connection()
     mocked_connect.assert_awaited_once()
 
@@ -223,11 +202,7 @@ async def test_ensure_connection(mocker):
 @pytest.mark.asyncio
 async def test_ensure_connection_already_connected(mocker):
     mocked_connect = mocker.patch.object(RMQBackend, '_connect')
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(is_closed=False)
     await backend._ensure_connection()
     mocked_connect.assert_not_awaited()
@@ -239,11 +214,7 @@ async def test_ensure_consumer_channel(mocker):
         exchange_declare=mocker.AsyncMock(),
         queue_declare=mocker.AsyncMock(),
     )
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     await backend._ensure_consumer_channel()
     mocked_channel.exchange_declare.assert_awaited_once_with(backend._exchange_name)
@@ -255,11 +226,7 @@ async def test_ensure_producer_channel(mocker):
     mocked_channel = mocker.MagicMock(
         exchange_declare=mocker.AsyncMock(),
     )
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     await backend._ensure_producer_channel()
     mocked_channel.exchange_declare.assert_awaited_once_with(backend._exchange_name)
@@ -274,11 +241,7 @@ async def test_consumer(mocker):
         closing=asyncio.Future(),
     )
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     backend._consumer_event.set()
     backend._consumer_channel = mocked_channel
@@ -303,11 +266,7 @@ async def test_consumer_cancelled(mocker, caplog):
         closing=asyncio.Future(),
     )
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     backend._consumer_event.set()
     backend._consumer_channel = mocked_channel
@@ -338,11 +297,7 @@ async def test_consumer_connection_timeout(mocker, caplog):
         closing=asyncio.Future(),
     )
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     backend._consumer_event.set()
     backend._consumer_channel = mocked_channel
@@ -372,11 +327,7 @@ async def test_consumer_generic_exception(mocker, caplog):
         closing=asyncio.Future(),
     )
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
     backend._connection = mocker.MagicMock(channel=mocker.AsyncMock(return_value=mocked_channel))
     backend._consumer_event.set()
     backend._consumer_channel = mocked_channel
@@ -400,11 +351,7 @@ async def test__connect(mocker):
         return_value=mocker.MagicMock(connected=mocker.MagicMock(wait=mocker.AsyncMock())),
     )
 
-    backend = RMQBackend(
-        'test://',
-        mocker.MagicMock(),
-        mocker.MagicMock(),
-    )
+    backend = RMQBackend('test://')
 
     await backend._connect()
     backend._connection.connected.wait.assert_awaited_once()

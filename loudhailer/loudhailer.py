@@ -11,17 +11,38 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from loudhailer.backends import RMQBackend
+from loudhailer.dataclasses import Envelope, RecipientType
 
 
 logger = logging.getLogger(__name__)
 
 
-def default_serialize(group, data):
-    return json.dumps(data).encode('utf-8')
+def default_serialize(envelope):
+    return Envelope(
+        recipient_type=envelope.recipient_type,
+        recipient=envelope.recipient,
+        message=json.dumps(envelope.message).encode('utf-8'),
+    )
 
 
-def default_deserialize(group, data):
-    return json.loads(data.decode('utf-8'))
+def default_deserialize(envelope):
+    return Envelope(
+        recipient_type=envelope.recipient_type,
+        recipient=envelope.recipient,
+        message=json.loads(envelope.message.decode('utf-8')),
+    )
+
+
+class MessageIterator:
+    def __init__(self, queue):
+        self._queue = queue
+
+    async def __aiter__(self):
+        while True:
+            yield await self.get()
+
+    async def get(self):
+        return await self._queue.get()
 
 
 class Loudhailer:
@@ -33,18 +54,31 @@ class Loudhailer:
     def __init__(
         self,
         url,
-        serialize_func=default_serialize,
-        deserialize_func=default_deserialize,
+        extra_backends=None,
+        serialize_func=None,
+        deserialize_func=None,
     ):
-        parsed_url = urlparse(url)
-        error_msg = f"No backend available for schema '{parsed_url.scheme}'"
-        assert parsed_url.scheme in self.BACKENDS, error_msg
+        self.url = url
+        assert serialize_func is None or callable(serialize_func), (
+            'Serialize func must be a callable'
+        )
+        assert deserialize_func is None or callable(deserialize_func), (
+            'Deserialize func must be a callable'
+        )
+        self._serialize_func = serialize_func or default_serialize
+        self._deserialize_func = deserialize_func or default_deserialize
 
-        backend_class = self.BACKENDS[parsed_url.scheme]
+        backends = {**self.BACKENDS}
+        backends.update(extra_backends or {})
+
+        parsed_url = urlparse(url)
+        assert parsed_url.scheme in backends, (
+            f"No backend available for schema '{parsed_url.scheme}'"
+        )
+
+        backend_class = backends[parsed_url.scheme]
         self._backend = backend_class(
             url,
-            serialize_func,
-            deserialize_func,
         )
 
         self._subscriptions = {}
@@ -69,8 +103,15 @@ class Loudhailer:
             self._listener_task.cancel()
         await self._backend.disconnect()
 
-    async def publish(self, group, message):
-        await self._backend.publish(group, message)
+    async def publish(self, recipient_type, recipient, message):
+        envelope = self._serialize_func(
+            Envelope(
+                recipient_type=recipient_type,
+                recipient=recipient,
+                message=message,
+            ),
+        )
+        await self._backend.publish(envelope)
 
     async def register_subscription(self, group, subscriber=None):
         subscriber = subscriber or str(uuid4())
@@ -106,19 +147,11 @@ class Loudhailer:
 
     async def _listener(self):
         while True:
-            event = await self._backend.next_published()
-            subscription = self._subscriptions.get(event.group, [])
-            for subscriber in subscription:
-                await self._subscribers[subscriber].put(event.data)
-
-
-class MessageIterator:
-    def __init__(self, queue):
-        self._queue = queue
-
-    async def __aiter__(self):
-        while True:
-            yield await self.get()
-
-    async def get(self):
-        return await self._queue.get()
+            envelope = await self._backend.next_published()
+            envelope = self._deserialize_func(envelope)
+            if envelope.recipient_type == RecipientType.GROUP:
+                subscription = self._subscriptions.get(envelope.recipient, [])
+                for subscriber in subscription:
+                    await self._subscribers[subscriber].put(envelope.message)
+            else:
+                await self._subscribers[envelope.recipient].put(envelope.message)

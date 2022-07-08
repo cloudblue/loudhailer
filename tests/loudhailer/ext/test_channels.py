@@ -8,6 +8,7 @@ import logging
 import msgpack
 import pytest
 
+from loudhailer.dataclasses import Envelope, RecipientType
 from loudhailer.ext.channels import LoudhailerChannelLayer, LoudhailerChannelLifespan
 
 
@@ -30,28 +31,61 @@ def test_layer_initialization(mocker):
     )
 
 
-def test_layer_serialize(mocker):
+@pytest.mark.parametrize(
+    ('recipient_type', 'asgi_key'),
+    (
+        (RecipientType.DIRECT, '__asgi_channel__'),
+        (RecipientType.GROUP, '__asgi_group__'),
+    ),
+)
+def test_layer_serialize(mocker, recipient_type, asgi_key):
     mocker.patch('loudhailer.ext.channels.Loudhailer')
 
     layer = LoudhailerChannelLayer(url='test://')
     message = {'test': 'message'}
-    expected_message = msgpack.packb({
+    expected_message = {
+        asgi_key: 'recipient',
         **message,
-        '__asgi_group__': 'my_group',
-    })
-    assert layer.serialize('my_group', message) == expected_message
+    }
+
+    envelope = layer.serialize(
+        Envelope(
+            recipient_type=recipient_type,
+            recipient='recipient',
+            message=message,
+        ),
+    )
+    assert envelope.recipient_type == recipient_type
+    assert envelope.recipient == 'recipient'
+    assert msgpack.unpackb(envelope.message) == expected_message
 
 
-def test_layer_deserialize(mocker):
+@pytest.mark.parametrize(
+    ('recipient_type', 'asgi_key'),
+    (
+        (RecipientType.DIRECT, '__asgi_channel__'),
+        (RecipientType.GROUP, '__asgi_group__'),
+    ),
+)
+def test_layer_deserialize(mocker, recipient_type, asgi_key):
     mocker.patch('loudhailer.ext.channels.Loudhailer')
 
     layer = LoudhailerChannelLayer(url='test://')
     message = {'test': 'message'}
     message_bytes = msgpack.packb({
-        '__asgi_group__': 'my_group',
+        asgi_key: 'recipient',
         **message,
     })
-    assert layer.deserialize('my_group', message_bytes) == message
+    envelope = layer.deserialize(
+        Envelope(
+            recipient_type=recipient_type,
+            recipient='recipient',
+            message=message_bytes,
+        ),
+    )
+    assert envelope.recipient_type == recipient_type
+    assert envelope.recipient == 'recipient'
+    assert envelope.message == message
 
 
 @pytest.mark.asyncio
@@ -144,7 +178,9 @@ async def test_layer_group_send(mocker):
 
     await layer.group_send('my_group', {'a': 'message'})
 
-    mocked_loudhailer.publish.assert_awaited_once_with('my_group', {'a': 'message'})
+    mocked_loudhailer.publish.assert_awaited_once_with(
+        RecipientType.GROUP, 'my_group', {'a': 'message'},
+    )
 
 
 @pytest.mark.asyncio

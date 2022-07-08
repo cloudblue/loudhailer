@@ -8,7 +8,7 @@ import logging
 
 import aiormq
 
-from loudhailer.dataclasses import Message
+from loudhailer.dataclasses import Envelope
 from loudhailer.utils import rand_string
 from loudhailer.backends.base import BackendBase, PublishError
 from loudhailer.backends.utils import blur_pwd
@@ -21,16 +21,12 @@ class RMQBackend(BackendBase):
     def __init__(
         self,
         url,
-        serialize_func,
-        deserialize_func,
         exchange_name='loudhailer',
         queue_prefix='rmqchn',
         connect_timeout=5,
         publish_retries=3,
     ):
         self._url = url
-        self._serialize_func = serialize_func
-        self._deserialize_func = deserialize_func
         self._exchange_name = exchange_name
         self._queue_name = f'{queue_prefix}_{rand_string(12)}'
         self._connect_timeout = connect_timeout
@@ -45,8 +41,13 @@ class RMQBackend(BackendBase):
         self._ready_event = asyncio.Event()
 
     async def on_message(self, message):
-        data = self._deserialize_func(message.routing_key, message.body)
-        await self._listen_queue.put(Message(message.routing_key, data))
+        await self._listen_queue.put(
+            Envelope(
+                recipient_type=message.header.properties.message_type,
+                recipient=message.routing_key,
+                message=message.body,
+            ),
+        )
         await message.channel.basic_ack(message.delivery.delivery_tag)
 
     async def connect(self):
@@ -63,26 +64,28 @@ class RMQBackend(BackendBase):
         if self._connection:
             await self._connection.close()
 
-    async def subscribe(self, group):
-        await self._consumer_channel.queue_bind(self._queue_name, self._exchange_name, group)
+    async def subscribe(self, channel):
+        await self._consumer_channel.queue_bind(self._queue_name, self._exchange_name, channel)
         logger.debug(
-            f'Bind group {group} to exchange {self._exchange_name} queue {self._queue_name}',
+            f'Bind channel {channel} to exchange {self._exchange_name} queue {self._queue_name}',
         )
 
-    async def unsubscribe(self, group):
-        await self._consumer_channel.queue_unbind(self._queue_name, self._exchange_name, group)
+    async def unsubscribe(self, channel):
+        await self._consumer_channel.queue_unbind(self._queue_name, self._exchange_name, channel)
         logger.debug(
-            f'Unbind group {group} to exchange {self._exchange_name} queue {self._queue_name}',
+            f'Unbind channel {channel} to exchange {self._exchange_name} queue {self._queue_name}',
         )
 
-    async def publish(self, group, message):
+    async def publish(self, envelope):
         for _ in range(self._publish_retries):
             try:
                 await self._ensure_connection()
                 await self._ensure_producer_channel()
-                body = self._serialize_func(group, message)
                 await self._producer_channel.basic_publish(
-                    body, exchange=self._exchange_name, routing_key=group,
+                    envelope.message,
+                    exchange=self._exchange_name,
+                    routing_key=envelope.recipient,
+                    properties=aiormq.spec.Basic.Properties(message_type=envelope.recipient_type),
                 )
                 return
             except (aiormq.AMQPError, ConnectionError, RuntimeError, asyncio.TimeoutError):
