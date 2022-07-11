@@ -7,7 +7,9 @@ import shlex
 import subprocess
 import time
 
+import django
 import pytest
+from django.conf import settings
 
 from loudhailer import Loudhailer
 
@@ -51,3 +53,11 @@ def channels_port():
     yield port
     proc.terminate()
     proc.wait()
+
+
+@pytest.fixture(scope='session', autouse=True)
+def django_setup():
+    settings.configure(
+        LOGGING_CONFIG={},
+    )
+    django.setup()

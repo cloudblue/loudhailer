@@ -10,13 +10,19 @@ services:
       RABBITMQ_DEFAULT_PASS: 1q2w3e
       RABBITMQ_DEFAULT_VHOST: loudhailer
 
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+
   e2e:
     build:
       context: .
     command: >
-      bash -c 'dockerize -wait tcp://rabbit:5672 -timeout 50s &&
+      bash -c 'dockerize -wait tcp://rabbit:5672 -wait tcp://redis:6379 -timeout 50s &&
       pytest tests/e2e'
-    env:
+    environment:
       RABBITMQ_URL: amqp://admin:1q2w3e@rabbit/loudhailer
+      REDIS_URL: redis://redis
     depends_on:
       - rabbit
+      - redis
