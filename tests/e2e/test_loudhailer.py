@@ -6,6 +6,7 @@ import pytest
 import websockets
 
 from loudhailer import Loudhailer
+from loudhailer.dataclasses import RecipientType
 
 from tests.e2e.settings import RABBITMQ_URL
 
@@ -21,7 +22,7 @@ async def test_loudhailer(fastapi_port):
             async with websockets.connect(url) as ws1_2:
                 await asyncio.sleep(0.1)
                 for i in range(100):
-                    await loudhailer.publish('ws1', {'#msg': i})
+                    await loudhailer.publish(RecipientType.GROUP, 'ws1', {'#msg': i})
                     received = json.loads(await ws1_1.recv())
                     logger.info(f'ws1_1 receive message from pid {received["pid"]}')
                     assert received['data'] == {'#msg': i}

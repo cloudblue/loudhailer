@@ -11,7 +11,9 @@ class PublishError(Exception):
 
 
 class BackendBase(ABC):
-    def __init__(self, url, serialize_func, deserialize_func):
+
+    @abstractmethod
+    def __init__(self, url):
         raise NotImplementedError()
 
     @abstractmethod
@@ -23,15 +25,15 @@ class BackendBase(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    async def subscribe(self, group):
+    async def subscribe(self, channel):
         raise NotImplementedError()
 
     @abstractmethod
-    async def unsubscribe(self, group):
+    async def unsubscribe(self, channel):
         raise NotImplementedError()
 
     @abstractmethod
-    async def publish(self, channel, message):
+    async def publish(self, envelope):
         raise NotImplementedError()
 
     @abstractmethod

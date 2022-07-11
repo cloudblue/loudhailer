@@ -23,7 +23,7 @@ jobs:
         poetry run flake8
     - name: Testing
       run: |
-        poetry run pytest
+        poetry run pytest --ignore-glob=**/e2e
     - name: Extract tag name
       uses: actions/github-script@v3
       id: tag

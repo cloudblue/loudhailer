@@ -14,6 +14,7 @@ from channels.layers import BaseChannelLayer, get_channel_layer
 from django.dispatch import Signal
 
 from loudhailer import Loudhailer
+from loudhailer.dataclasses import Envelope, RecipientType
 from loudhailer.utils import rand_string
 
 
@@ -95,15 +96,28 @@ class LoudhailerChannelLayer(BaseChannelLayer):
             deserialize_func=self.deserialize,
         )
 
-    def serialize(self, group, message):
-        data = deepcopy(message)
-        data['__asgi_group__'] = group
-        return msgpack.packb(data)
+    def serialize(self, envelope):
+        message = deepcopy(envelope.message)
+        if envelope.recipient_type == RecipientType.GROUP:
+            message['__asgi_group__'] = envelope.recipient
+        else:
+            message['__asgi_channel__'] = envelope.recipient
 
-    def deserialize(self, group, message_bytes):
-        data = msgpack.unpackb(message_bytes)
-        data.pop('__asgi_group__', None)
-        return data
+        return Envelope(
+            recipient_type=envelope.recipient_type,
+            recipient=envelope.recipient,
+            message=msgpack.packb(message),
+        )
+
+    def deserialize(self, envelope):
+        message = msgpack.unpackb(envelope.message)
+        message.pop('__asgi_group__', None)
+        message.pop('__asgi_channel__', None)
+        return Envelope(
+            recipient_type=envelope.recipient_type,
+            recipient=envelope.recipient,
+            message=message,
+        )
 
     async def connect(self):
         await self._loudhailer.connect()
@@ -134,4 +148,4 @@ class LoudhailerChannelLayer(BaseChannelLayer):
 
     async def group_send(self, group, message):
         assert self.valid_group_name(group), 'Group name not valid'
-        await self._loudhailer.publish(group, message)
+        await self._loudhailer.publish(RecipientType.GROUP, group, message)
