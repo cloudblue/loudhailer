@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+
+  rabbit:
+    image: rabbitmq:3.8-management-alpine
+    hostname: rabbit
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: 1q2w3e
+      RABBITMQ_DEFAULT_VHOST: loudhailer
+
+  e2e:
+    build:
+      context: .
+    command: >
+      bash -c 'dockerize -wait tcp://rabbit:5672 -timeout 50s &&
+      pytest tests/e2e'
+    depends_on:
+      - rabbit
