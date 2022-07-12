@@ -25,6 +25,11 @@ jobs:
           RABBITMQ_DEFAULT_PASS: 1q2w3e
           RABBITMQ_DEFAULT_VHOST: loudhailer
         options: --hostname rabbit
+      redis:
+        image: redis:7-alpine
+        ports:
+        - 6379:6379
+        options: --hostname redis
     steps:
     - uses: actions/checkout@v2
       with:

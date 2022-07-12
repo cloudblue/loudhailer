@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from loudhailer.backends import RMQBackend
+from loudhailer.backends import RedisBackend, RMQBackend
 from loudhailer.dataclasses import Envelope, RecipientType
 
 
@@ -49,6 +49,8 @@ class Loudhailer:
 
     BACKENDS = {
         'amqp': RMQBackend,
+        'redis': RedisBackend,
+        'rediss': RedisBackend,
     }
 
     def __init__(

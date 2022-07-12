@@ -10,7 +10,7 @@ from copy import deepcopy
 
 import msgpack
 from asgiref.sync import sync_to_async
-from channels.layers import BaseChannelLayer, get_channel_layer
+from channels.layers import BaseChannelLayer, channel_layers
 from django.dispatch import Signal
 
 from loudhailer import Loudhailer
@@ -37,10 +37,8 @@ class LoudhailerChannelLifespan:
 
     async def process_lifespan_event(self, scope, receive, send):
         message = await receive()
-        channel_layer = get_channel_layer()
         if message['type'] == 'lifespan.startup':
-            if channel_layer:
-                await channel_layer.connect()
+            await self.start_layers()
             await sync_to_async(asgi_application_startup.send, thread_sensitive=True)(
                 sender=self.__class__, scope=scope,
             )
@@ -51,8 +49,7 @@ class LoudhailerChannelLifespan:
                     await sync_to_async(self.on_startup, thread_sensitive=True)()
             await send({'type': 'lifespan.startup.complete'})
         elif message['type'] == 'lifespan.shutdown':
-            if channel_layer:
-                await channel_layer.disconnect()
+            await self.stop_layers()
             await sync_to_async(asgi_application_shutdown.send, thread_sensitive=True)(
                 sender=self.__class__, scope=scope,
             )
@@ -62,6 +59,17 @@ class LoudhailerChannelLifespan:
                 else:
                     await sync_to_async(self.on_shutdown, thread_sensitive=True)()
             await send({'type': 'lifespan.shutdown.complete'})
+
+    async def start_layers(self):
+        for backend_name in channel_layers.configs.keys():
+            backend = channel_layers[backend_name]
+            if isinstance(backend, LoudhailerChannelLayer):
+                await backend.connect()
+
+    async def stop_layers(self):
+        for backend in channel_layers.backends.values():
+            if isinstance(backend, LoudhailerChannelLayer):
+                await backend.disconnect()
 
     @classmethod
     def as_asgi(cls, **initkwargs):

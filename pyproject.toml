@@ -31,6 +31,8 @@ aiormq = "^6.3.3"
 channels = { version = "3.*", optional = true }
 "backports.zoneinfo" = { version = "*", markers = "python_version < '3.9'" }
 tzdata = { version = "*", markers = "sys_platform == 'win32'" }
+redis = "^4.3.4"
+async-timeout = "^4.0.2"
 
 [tool.poetry.dev-dependencies]
 ipython = "^7.21.0"

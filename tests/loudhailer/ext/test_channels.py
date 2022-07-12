@@ -7,6 +7,7 @@ import logging
 
 import msgpack
 import pytest
+from django.test import override_settings
 
 from loudhailer.dataclasses import Envelope, RecipientType
 from loudhailer.ext.channels import LoudhailerChannelLayer, LoudhailerChannelLifespan
@@ -185,7 +186,7 @@ async def test_layer_group_send(mocker):
 
 @pytest.mark.asyncio
 async def test_lifespan_startup(mocker):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'start_layers')
     mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_startup.send')
     handler = LoudhailerChannelLifespan()
     send = mocker.AsyncMock()
@@ -197,7 +198,7 @@ async def test_lifespan_startup(mocker):
 
 @pytest.mark.asyncio
 async def test_lifespan_startup_with_async_hook(mocker, capsys):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'start_layers')
     mocker.patch('loudhailer.ext.channels.asgi_application_startup.send')
 
     async def on_startup():
@@ -214,7 +215,7 @@ async def test_lifespan_startup_with_async_hook(mocker, capsys):
 
 @pytest.mark.asyncio
 async def test_lifespan_startup_with_sync_hook(mocker, capsys):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'start_layers')
     mocker.patch('loudhailer.ext.channels.asgi_application_startup.send')
 
     def on_startup():
@@ -231,21 +232,30 @@ async def test_lifespan_startup_with_sync_hook(mocker, capsys):
 
 @pytest.mark.asyncio
 async def test_lifespan_startup_with_layer(mocker):
-    mocked_layer = mocker.MagicMock(connect=mocker.AsyncMock())
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=mocked_layer)
-    mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_startup.send')
-    handler = LoudhailerChannelLifespan()
-    send = mocker.AsyncMock()
-    receive = mocker.AsyncMock(return_value={'type': 'lifespan.startup'})
-    await handler.process_lifespan_event({'type': 'lifespan'}, receive, send)
-    mocked_send.assert_called()
-    send.assert_awaited_once_with({'type': 'lifespan.startup.complete'})
-    mocked_layer.connect.assert_awaited_once()
+    with override_settings(
+        CHANNEL_LAYERS={
+            'default': {
+                'BACKEND': 'loudhailer.ext.channels.LoudhailerChannelLayer',
+                'CONFIG': {
+                    'url': 'amqp://localhost',
+                },
+            },
+        },
+    ):
+        mocked_connect = mocker.patch.object(LoudhailerChannelLayer, 'connect')
+        mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_startup.send')
+        handler = LoudhailerChannelLifespan()
+        send = mocker.AsyncMock()
+        receive = mocker.AsyncMock(return_value={'type': 'lifespan.startup'})
+        await handler.process_lifespan_event({'type': 'lifespan'}, receive, send)
+        mocked_send.assert_called()
+        send.assert_awaited_once_with({'type': 'lifespan.startup.complete'})
+        mocked_connect.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_lifespan_shutdown(mocker):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'stop_layers')
     mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_shutdown.send')
     handler = LoudhailerChannelLifespan()
     send = mocker.AsyncMock()
@@ -257,7 +267,7 @@ async def test_lifespan_shutdown(mocker):
 
 @pytest.mark.asyncio
 async def test_lifespan_shutdown_with_async_hook(mocker, capsys):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'stop_layers')
     mocker.patch('loudhailer.ext.channels.asgi_application_shutdown.send')
 
     async def on_shutdown():
@@ -274,7 +284,7 @@ async def test_lifespan_shutdown_with_async_hook(mocker, capsys):
 
 @pytest.mark.asyncio
 async def test_lifespan_shutdown_with_sync_hook(mocker, capsys):
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=None)
+    mocker.patch.object(LoudhailerChannelLifespan, 'stop_layers')
     mocker.patch('loudhailer.ext.channels.asgi_application_shutdown.send')
 
     def on_shutdown():
@@ -291,16 +301,27 @@ async def test_lifespan_shutdown_with_sync_hook(mocker, capsys):
 
 @pytest.mark.asyncio
 async def test_lifespan_shutdown_with_layer(mocker):
-    mocked_layer = mocker.MagicMock(disconnect=mocker.AsyncMock())
-    mocker.patch('loudhailer.ext.channels.get_channel_layer', return_value=mocked_layer)
-    mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_shutdown.send')
-    handler = LoudhailerChannelLifespan()
-    send = mocker.AsyncMock()
-    receive = mocker.AsyncMock(return_value={'type': 'lifespan.shutdown'})
-    await handler.process_lifespan_event({'type': 'lifespan'}, receive, send)
-    mocked_send.assert_called()
-    send.assert_awaited_once_with({'type': 'lifespan.shutdown.complete'})
-    mocked_layer.disconnect.assert_awaited_once()
+    with override_settings(
+        CHANNEL_LAYERS={
+            'default': {
+                'BACKEND': 'loudhailer.ext.channels.LoudhailerChannelLayer',
+                'CONFIG': {
+                    'url': 'amqp://localhost',
+                },
+            },
+        },
+    ):
+        mocker.patch.object(LoudhailerChannelLayer, 'connect')
+        mocked_disconnect = mocker.patch.object(LoudhailerChannelLayer, 'disconnect')
+        mocked_send = mocker.patch('loudhailer.ext.channels.asgi_application_shutdown.send')
+        handler = LoudhailerChannelLifespan()
+        await handler.start_layers()
+        send = mocker.AsyncMock()
+        receive = mocker.AsyncMock(return_value={'type': 'lifespan.shutdown'})
+        await handler.process_lifespan_event({'type': 'lifespan'}, receive, send)
+        mocked_send.assert_called()
+        send.assert_awaited_once_with({'type': 'lifespan.shutdown.complete'})
+        mocked_disconnect.assert_awaited_once()
 
 
 @pytest.mark.asyncio
