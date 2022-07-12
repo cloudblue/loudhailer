@@ -6,7 +6,7 @@
 
 `Loudhailer` is a python library that allows to send broadcast messages to groups of consumers. It has been designed for being used in asynchronous applications.
 
-This initial release natively supports RabbitMQ and Redis backends and can be easily extended to support backends.
+This initial release natively supports RabbitMQ and Redis backends and can be easily extended to support more backends.
 
 `Loudhailer` includes an extension that allows you to use in django-channels based projects.
 
