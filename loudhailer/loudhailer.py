@@ -49,6 +49,7 @@ class Loudhailer:
 
     BACKENDS = {
         'amqp': RMQBackend,
+        'amqps': RMQBackend,
         'redis': RedisBackend,
         'rediss': RedisBackend,
     }
@@ -59,6 +60,7 @@ class Loudhailer:
         extra_backends=None,
         serialize_func=None,
         deserialize_func=None,
+        **backend_kwargs,
     ):
         self.url = url
         assert serialize_func is None or callable(serialize_func), (
@@ -81,6 +83,7 @@ class Loudhailer:
         backend_class = backends[parsed_url.scheme]
         self._backend = backend_class(
             url,
+            **backend_kwargs,
         )
 
         self._subscriptions = {}

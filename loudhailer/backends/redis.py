@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class RedisBackend(BackendBase):
 
-    def __init__(self, url):
+    def __init__(self, url, **kwargs):
         self._url = url
         self._redis = redis.from_url(self._url)
         self._pubsub = self._redis.pubsub()

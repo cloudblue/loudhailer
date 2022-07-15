@@ -13,7 +13,7 @@ class PublishError(Exception):
 class BackendBase(ABC):
 
     @abstractmethod
-    def __init__(self, url):
+    def __init__(self, url, **kwargs):
         raise NotImplementedError()
 
     @abstractmethod

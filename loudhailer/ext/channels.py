@@ -95,6 +95,7 @@ class LoudhailerChannelLayer(BaseChannelLayer):
         expiry=60,
         capacity=100,
         channel_capacity=None,
+        **kwargs,
     ):
         assert url is not None, 'URL is mandatory'
         super().__init__(expiry=expiry, capacity=capacity, channel_capacity=channel_capacity)
@@ -102,6 +103,7 @@ class LoudhailerChannelLayer(BaseChannelLayer):
             url,
             serialize_func=self.serialize,
             deserialize_func=self.deserialize,
+            **kwargs,
         )
 
     def serialize(self, envelope):
