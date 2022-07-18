@@ -22,6 +22,16 @@ def test_initialization(test_backend):
     assert loudhailer._deserialize_func == default_deserialize
 
 
+def test_initialization_with_backend_kwargs(test_backend):
+    mocked_backend = test_backend()
+
+    loudhailer = Loudhailer('test://', backend_kwarg='an arg')
+
+    mocked_backend.assert_called_once_with('test://', backend_kwarg='an arg')
+    assert loudhailer._serialize_func == default_serialize
+    assert loudhailer._deserialize_func == default_deserialize
+
+
 def test_initialization_custom_backend(mocker):
     mocked_backend = mocker.MagicMock()
 

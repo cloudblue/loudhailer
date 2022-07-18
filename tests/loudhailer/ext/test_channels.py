@@ -32,6 +32,19 @@ def test_layer_initialization(mocker):
     )
 
 
+def test_layer_initialization_with_exchange_name(mocker):
+    mocked_loudhailer = mocker.patch('loudhailer.ext.channels.Loudhailer')
+
+    layer = LoudhailerChannelLayer(url='test://', exchange_name='channels')
+
+    mocked_loudhailer.assert_called_once_with(
+        'test://',
+        serialize_func=layer.serialize,
+        deserialize_func=layer.deserialize,
+        exchange_name='channels',
+    )
+
+
 @pytest.mark.parametrize(
     ('recipient_type', 'asgi_key'),
     (
