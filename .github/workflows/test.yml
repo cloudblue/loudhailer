@@ -46,9 +46,13 @@ jobs:
     - name: Linting
       run: |
         poetry run flake8
-    - name: Testing
+    - name: E2E tests
       run: |
-        poetry run pytest
+        poetry run pytest tests/e2e/test_channels.py
+        poetry run pytest tests/e2e/test_loudhailer.py
+    - name: Unit tests
+      run: |
+        poetry run pytest --ignore-glob=**/e2e
 
   sonar:
     needs: [test]

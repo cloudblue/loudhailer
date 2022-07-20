@@ -132,6 +132,8 @@ class Loudhailer:
         return subscriber
 
     async def unregister_subscription(self, group, subscriber):
+        if group not in self._subscriptions:
+            return
         subscriptions = self._subscriptions.get(group, set())
         if subscriber in subscriptions:
             subscriptions.remove(subscriber)
@@ -139,6 +141,7 @@ class Loudhailer:
             del self._subscribers[subscriber]
         if not subscriptions:
             await self._backend.unsubscribe(group)
+            del self._subscriptions[group]
 
     async def receive_message(self, subscriber):
         queue = self._subscribers.setdefault(subscriber, asyncio.Queue())

@@ -55,6 +55,7 @@ fastapi = "0.*"
 channels = "3.*"
 websockets = "10.*"
 uvicorn = "0.*"
+pytest-randomly = "3.*"
 
 [tool.poetry.extras]
 channels = ["channels"]
