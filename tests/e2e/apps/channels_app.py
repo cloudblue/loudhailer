@@ -48,7 +48,7 @@ settings.configure(
         'loggers': {
             'loudhailer': {
                 'handlers': ['console'],
-                'level': 'INFO',
+                'level': 'DEBUG',
             },
         },
     },
