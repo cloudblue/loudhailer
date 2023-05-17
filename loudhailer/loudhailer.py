@@ -141,7 +141,7 @@ class Loudhailer:
                 subscriptions.remove(subscriber)
             if subscriber in self._subscribers:
                 del self._subscribers[subscriber]
-            if not subscriptions:
+            if not subscriptions and group in self._subscriptions:
                 await self._backend.unsubscribe(group)
                 del self._subscriptions[group]
 

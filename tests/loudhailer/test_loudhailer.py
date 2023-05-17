@@ -225,7 +225,10 @@ async def test_unregister_subscription(mocker, test_backend):
     loudhailer._subscriptions['group'] = set(['my_subscriber'])
     loudhailer._subscribers['my_subscriber'] = 'whatever'
 
-    await loudhailer.unregister_subscription('group', 'my_subscriber')
+    await asyncio.gather(
+        loudhailer.unregister_subscription('group', 'my_subscriber'),
+        loudhailer.unregister_subscription('group', 'my_subscriber'),
+    )
     assert 'my_subscriber' not in loudhailer._subscribers
     assert 'group' not in loudhailer._subscriptions
     mocked_unsubscribe.assert_awaited_once()
