@@ -1,7 +1,7 @@
 #
 # This file is part of the Ingram Micro CloudBlue Loudhailer.
 #
-# Copyright (c) 2022 Ingram Micro. All Rights Reserved.
+# Copyright (c) 2025 CloudBlue. All Rights Reserved.
 #
 from dataclasses import dataclass
 from typing import Any, Optional
