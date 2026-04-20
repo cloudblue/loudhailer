@@ -39,6 +39,8 @@ class RMQBackend(BackendBase):
         self._consumer_task = None
         self._consumer_event = asyncio.Event()
         self._ready_event = asyncio.Event()
+        self._subscribed_channels = set()
+        self._sub_lock = asyncio.Lock()
 
     async def on_message(self, message):
         await self._listen_queue.put(
@@ -65,16 +67,29 @@ class RMQBackend(BackendBase):
             await self._connection.close()
 
     async def subscribe(self, channel):
-        await self._consumer_channel.queue_bind(self._queue_name, self._exchange_name, channel)
-        logger.debug(
-            f'Bind channel {channel} to exchange {self._exchange_name} queue {self._queue_name}',
-        )
+        # Contract: if queue_bind raises, the channel is NOT added to the
+        # tracking set and will not be rebound on reconnect. Callers that
+        # need at-least-one-success semantics must retry themselves.
+        async with self._sub_lock:
+            await self._consumer_channel.queue_bind(
+                self._queue_name, self._exchange_name, channel,
+            )
+            self._subscribed_channels.add(channel)
+            logger.debug(
+                f'Bind channel {channel} to exchange {self._exchange_name} '
+                f'queue {self._queue_name}',
+            )
 
     async def unsubscribe(self, channel):
-        await self._consumer_channel.queue_unbind(self._queue_name, self._exchange_name, channel)
-        logger.debug(
-            f'Unbind channel {channel} to exchange {self._exchange_name} queue {self._queue_name}',
-        )
+        async with self._sub_lock:
+            await self._consumer_channel.queue_unbind(
+                self._queue_name, self._exchange_name, channel,
+            )
+            self._subscribed_channels.discard(channel)
+            logger.debug(
+                f'Unbind channel {channel} to exchange {self._exchange_name} '
+                f'queue {self._queue_name}',
+            )
 
     async def publish(self, envelope):
         for _ in range(self._publish_retries):
@@ -102,10 +117,30 @@ class RMQBackend(BackendBase):
                 await asyncio.wait_for(self._connect(), timeout=self._connect_timeout)
 
     async def _ensure_consumer_channel(self):
-        if not self._consumer_channel or self._consumer_channel.is_closed:
+        # Hold _sub_lock across channel creation AND rebind: prevents a
+        # concurrent subscribe/unsubscribe from mutating
+        # _subscribed_channels during our iteration (RuntimeError: Set
+        # changed size during iteration) and from binding on a channel
+        # that is still mid-setup.
+        async with self._sub_lock:
+            if self._consumer_channel and not self._consumer_channel.is_closed:
+                return
             self._consumer_channel = await self._connection.channel()
             await self._consumer_channel.exchange_declare(self._exchange_name)
             await self._consumer_channel.queue_declare(self._queue_name, exclusive=True)
+            if self._subscribed_channels:
+                logger.info(
+                    f'Rebinding {len(self._subscribed_channels)} channel(s) '
+                    f'to queue {self._queue_name} after (re)connect',
+                )
+            for channel in self._subscribed_channels:
+                await self._consumer_channel.queue_bind(
+                    self._queue_name, self._exchange_name, channel,
+                )
+                logger.debug(
+                    f'Rebound channel {channel} to exchange '
+                    f'{self._exchange_name} queue {self._queue_name}',
+                )
 
     async def _ensure_producer_channel(self):
         if not self._producer_channel or self._producer_channel.is_closed:
