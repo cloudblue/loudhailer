@@ -66,8 +66,8 @@ jobs:
         RABBITMQ_URL: amqp://admin:1q2w3e@127.0.0.1/loudhailer
         REDIS_URL: redis://127.0.0.1
       run: |
-        poetry run pytest tests/e2e/test_channels.py
-        poetry run pytest tests/e2e/test_loudhailer.py
+        timeout 120 poetry run pytest -v -s tests/e2e/test_channels.py
+        timeout 120 poetry run pytest -v -s tests/e2e/test_loudhailer.py
     - name: Unit tests
       run: |
         poetry run pytest --ignore-glob=**/e2e
