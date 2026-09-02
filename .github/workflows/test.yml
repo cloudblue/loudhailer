@@ -20,6 +20,7 @@ jobs:
         image: rabbitmq:3.8-management-alpine
         ports:
         - 5672:5672
+        - 15672:15672
         env:
           RABBITMQ_DEFAULT_USER: admin
           RABBITMQ_DEFAULT_PASS: 1q2w3e
@@ -47,16 +48,22 @@ jobs:
       run: |
         poetry run flake8
     - name: Wait for RabbitMQ and Redis
-      # Service containers are only guaranteed to have *started*, not that the
-      # broker inside is accepting connections yet. RMQBackend.connect() has no
-      # timeout of its own (it awaits an event that only a successful connection
-      # sets, retried in an unbounded loop) - without this wait, a slow-starting
-      # broker hangs the job indefinitely instead of failing.
+      # A bare TCP check is not enough here: RabbitMQ's port accepts (and
+      # immediately resets) connections for several seconds before the broker
+      # is actually ready to speak AMQP - confirmed directly, a client hitting
+      # that window sees an instant "connection reset", not a slow connect.
+      # RMQBackend.connect() has no timeout of its own (it awaits an event
+      # only a successful connection sets, retried in an unbounded loop), so
+      # racing that window hangs the job indefinitely instead of failing.
+      # The management API's own healthcheck endpoint only returns 200 once
+      # the node is actually healthy, so it's used as the real readiness
+      # signal instead.
       run: |
-        for port in 5672 6379; do
-          echo "Waiting for localhost:$port..."
-          timeout 50 bash -c "until echo > /dev/tcp/localhost/$port; do sleep 1; done"
-        done
+        echo "Waiting for RabbitMQ..."
+        timeout 60 bash -c \
+          'until curl -sf -u admin:1q2w3e http://localhost:15672/api/healthchecks/node > /dev/null; do sleep 1; done'
+        echo "Waiting for Redis..."
+        timeout 60 bash -c "until echo > /dev/tcp/localhost/6379; do sleep 1; done"
     - name: E2E tests
       run: |
         poetry run pytest tests/e2e/test_channels.py
