@@ -46,6 +46,17 @@ jobs:
     - name: Linting
       run: |
         poetry run flake8
+    - name: Wait for RabbitMQ and Redis
+      # Service containers are only guaranteed to have *started*, not that the
+      # broker inside is accepting connections yet. RMQBackend.connect() has no
+      # timeout of its own (it awaits an event that only a successful connection
+      # sets, retried in an unbounded loop) - without this wait, a slow-starting
+      # broker hangs the job indefinitely instead of failing.
+      run: |
+        for port in 5672 6379; do
+          echo "Waiting for localhost:$port..."
+          timeout 50 bash -c "until echo > /dev/tcp/localhost/$port; do sleep 1; done"
+        done
     - name: E2E tests
       run: |
         poetry run pytest tests/e2e/test_channels.py
