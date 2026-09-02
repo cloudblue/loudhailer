@@ -20,17 +20,26 @@ jobs:
         image: rabbitmq:3.8-management-alpine
         ports:
         - 5672:5672
-        - 15672:15672
         env:
           RABBITMQ_DEFAULT_USER: admin
           RABBITMQ_DEFAULT_PASS: 1q2w3e
           RABBITMQ_DEFAULT_VHOST: loudhailer
-        options: --hostname rabbit
+        options: >-
+          --hostname rabbit
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
         - 6379:6379
-        options: --hostname redis
+        options: >-
+          --hostname redis
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
     - uses: actions/checkout@v4
       with:
@@ -47,24 +56,15 @@ jobs:
     - name: Linting
       run: |
         poetry run flake8
-    - name: Wait for RabbitMQ and Redis
-      # A bare TCP check is not enough here: RabbitMQ's port accepts (and
-      # immediately resets) connections for several seconds before the broker
-      # is actually ready to speak AMQP - confirmed directly, a client hitting
-      # that window sees an instant "connection reset", not a slow connect.
-      # RMQBackend.connect() has no timeout of its own (it awaits an event
-      # only a successful connection sets, retried in an unbounded loop), so
-      # racing that window hangs the job indefinitely instead of failing.
-      # The management API's own healthcheck endpoint only returns 200 once
-      # the node is actually healthy, so it's used as the real readiness
-      # signal instead.
-      run: |
-        echo "Waiting for RabbitMQ..."
-        timeout 60 bash -c \
-          'until curl -sf -u admin:1q2w3e http://localhost:15672/api/healthchecks/node > /dev/null; do sleep 1; done'
-        echo "Waiting for Redis..."
-        timeout 60 bash -c "until echo > /dev/tcp/localhost/6379; do sleep 1; done"
     - name: E2E tests
+      # Explicit 127.0.0.1, not "localhost": on this runner "localhost" can
+      # resolve to ::1 first, and the AMQP/Redis clients here take whatever
+      # address resolves first with no fallback - if that's an unreachable
+      # ::1, the connect hangs rather than failing fast, since
+      # RMQBackend.connect() has no timeout of its own to survive that hang.
+      env:
+        RABBITMQ_URL: amqp://admin:1q2w3e@127.0.0.1/loudhailer
+        REDIS_URL: redis://127.0.0.1
       run: |
         poetry run pytest tests/e2e/test_channels.py
         poetry run pytest tests/e2e/test_loudhailer.py
