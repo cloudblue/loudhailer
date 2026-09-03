@@ -34,7 +34,10 @@ tzdata = { version = "*", markers = "sys_platform == 'win32'" }
 redis = "^4.3.4"
 async-timeout = "^4.0.2"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
+# flake8-commas (~2.0, below) imports pkg_resources directly; setuptools >=81 dropped it.
+# Pin below that until flake8-commas is updated or replaced.
+setuptools = "<81"
 ipython = "^7.21.0"
 pytest = "^6.1.2"
 pytest-cov = "^2.10.1"
