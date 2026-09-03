@@ -62,19 +62,18 @@ jobs:
       # address resolves first with no fallback - if that's an unreachable
       # ::1, the connect hangs rather than failing fast, since
       # RMQBackend.connect() has no timeout of its own to survive that hang.
-      # heartbeat=2&timeout=10 on the AMQP URL: RMQBackend.disconnect() calls
-      # channel.close()/connection.close() with no timeout of its own, and if
-      # the broker never sends the close ack the job hangs forever. aiormq
-      # itself already bounds these waits internally, but off two different,
-      # URL-configurable knobs: Channel._on_close() times out its close-ack
-      # wait using the negotiated heartbeat (default 60s, unbounded if
-      # disabled); Connection.close()'s reader task times out via its
-      # FrameReceiver, driven by the separate "timeout" param (default 60,
-      # effective wait (timeout+1)*3). Both timeouts are swallowed internally
-      # by aiormq, so shortening them just makes close() return promptly
-      # instead of hanging - no library code change needed.
+      #
+      # No heartbeat/timeout query params on the AMQP URL: a short heartbeat
+      # (e.g. 2s) was tried as a way to bound RMQBackend.disconnect()'s
+      # unbounded close-ack wait, but it also governs liveness of the
+      # connection for its *entire* lifetime - any brief latency spike during
+      # an active test risks the connection being torn down as "dead" mid-use
+      # (reproduced locally: a passing test started failing with a connection
+      # reset once this was added). The real hang this was working around
+      # turned out to be unrelated (see tests/e2e/apps/fastapi_app.py's fix),
+      # so it's not needed - default heartbeat is fine here.
       env:
-        RABBITMQ_URL: amqp://admin:1q2w3e@127.0.0.1/loudhailer?heartbeat=2&timeout=10
+        RABBITMQ_URL: amqp://admin:1q2w3e@127.0.0.1/loudhailer
         REDIS_URL: redis://127.0.0.1
       run: |
         timeout 120 poetry run pytest -v -s tests/e2e/test_channels.py
