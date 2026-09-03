@@ -51,7 +51,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install poetry
+        pip install --only-binary :all: poetry==1.8.5
         poetry install
     - name: Linting
       run: |
@@ -97,7 +97,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install poetry
+          pip install --only-binary :all: poetry==1.8.5
           poetry install
       - name: Generate coverage report
         run: |
