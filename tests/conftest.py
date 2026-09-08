@@ -4,6 +4,7 @@
 # Copyright (c) 2025 CloudBlue. All Rights Reserved.
 #
 import shlex
+import socket
 import subprocess
 import time
 
@@ -25,6 +26,21 @@ def test_backend(mocker):
     return _test_backend
 
 
+def _wait_for_port(port, timeout=10):
+    # A fixed sleep here is a race, not a wait: how long uvicorn takes to
+    # actually bind and accept connections varies with interpreter/import
+    # overhead (a 3s sleep silently stopped being enough on Python 3.12,
+    # producing spurious ConnectionRefusedError in every e2e test). Poll the
+    # actual socket instead so this only ever waits as long as it needs to.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
+                return
+        time.sleep(0.05)
+    raise RuntimeError(f'Nothing is listening on 127.0.0.1:{port} after {timeout}s')
+
+
 @pytest.fixture(scope='session')
 def fastapi_port():
     port = 18002
@@ -34,7 +50,7 @@ def fastapi_port():
             '--workers 3 tests.e2e.apps.fastapi_app:app',
         ),
     )
-    time.sleep(3)
+    _wait_for_port(port)
     yield port
     proc.terminate()
     proc.wait()
@@ -49,7 +65,7 @@ def channels_port():
             '--workers 3 tests.e2e.apps.channels_app:app',
         ),
     )
-    time.sleep(3)
+    _wait_for_port(port)
     yield port
     proc.terminate()
     proc.wait()

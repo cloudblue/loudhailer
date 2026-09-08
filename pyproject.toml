@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Utilities",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Libraries",
@@ -35,21 +36,21 @@ redis = "^4.3.4"
 async-timeout = "^4.0.2"
 
 [tool.poetry.group.dev.dependencies]
-# flake8-commas (~2.0, below) imports pkg_resources directly; setuptools >=81 dropped it.
-# Pin below that until flake8-commas is updated or replaced.
-setuptools = "<81"
 ipython = "^7.21.0"
 pytest = "^6.1.2"
 pytest-cov = "^2.10.1"
 pytest-mock = "^3.3.1"
 coverage = {extras = ["toml"], version = "5.*"}
-flake8 = "~3.8"
-flake8-bugbear = "~20"
+# Dev-only constraints below - the package itself still supports
+# python = ">=3.8,<4" above; this repo's CI just no longer tests below 3.10.
+flake8 = {version = "^7.3", python = ">=3.9,<4"}
+flake8-bugbear = {version = "^25.11", python = ">=3.10,<4"}
+pycodestyle = {version = ">=2.14.0,<2.15.0", python = ">=3.9,<4"}
 flake8-cognitive-complexity = "^0.1"
-flake8-commas = "~2.0"
+flake8-commas = "^4.0"
 flake8-future-import = "~0.4"
-flake8-import-order = "~0.18"
-flake8-broken-line = "~0.4"
+flake8-import-order = "^0.19"
+flake8-broken-line = "^1.0"
 fs = "^2.4.12"
 responses = "^0.21.0"
 pytest-httpx = "^0.21.0"
