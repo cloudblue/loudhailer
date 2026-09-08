@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.10", "3.12"]
     services:
       rabbit:
         image: rabbitmq:3.8-management-alpine
@@ -41,11 +41,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
@@ -86,11 +86,11 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.10'
       - name: Install dependencies
@@ -102,8 +102,17 @@ jobs:
         run: |
           poetry run pytest --ignore-glob=**/e2e
       - name: Fix coverage.xml for Sonar
+        # coverage.py writes <source> as the absolute cwd the tests ran from,
+        # which on this runner already IS $GITHUB_WORKSPACE - there is no
+        # /github/workspace directory here at all (that path only exists
+        # inside a Docker-based composite action's own container). The old
+        # hardcoded rewrite to /github/workspace pointed at a path that
+        # doesn't exist on this runner, so Sonar couldn't resolve any covered
+        # file and silently reported 0% coverage on new code. Rewrite
+        # dynamically instead, so this self-adjusts if the checkout path
+        # ever changes.
         run: |
-          sed -i 's/\/home\/runner\/work\/loudhailer\/loudhailer\//\/github\/workspace\//g' coverage.xml
+          sed -i "s|$(pwd)/|${GITHUB_WORKSPACE}/|g" coverage.xml
       - name: SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
         env:
