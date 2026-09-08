@@ -24,32 +24,60 @@ jobs:
           RABBITMQ_DEFAULT_USER: admin
           RABBITMQ_DEFAULT_PASS: 1q2w3e
           RABBITMQ_DEFAULT_VHOST: loudhailer
-        options: --hostname rabbit
+        options: >-
+          --hostname rabbit
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
         - 6379:6379
-        options: --hostname redis
+        options: >-
+          --hostname redis
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install poetry==1.3.2
+        pip install --only-binary :all: poetry==1.8.5
         poetry install
     - name: Linting
       run: |
         poetry run flake8
     - name: E2E tests
+      # Explicit 127.0.0.1, not "localhost": on this runner "localhost" can
+      # resolve to ::1 first, and the AMQP/Redis clients here take whatever
+      # address resolves first with no fallback - if that's an unreachable
+      # ::1, the connect hangs rather than failing fast, since
+      # RMQBackend.connect() has no timeout of its own to survive that hang.
+      #
+      # No heartbeat/timeout query params on the AMQP URL: a short heartbeat
+      # (e.g. 2s) was tried as a way to bound RMQBackend.disconnect()'s
+      # unbounded close-ack wait, but it also governs liveness of the
+      # connection for its *entire* lifetime - any brief latency spike during
+      # an active test risks the connection being torn down as "dead" mid-use
+      # (reproduced locally: a passing test started failing with a connection
+      # reset once this was added). The real hang this was working around
+      # turned out to be unrelated (see tests/e2e/apps/fastapi_app.py's fix),
+      # so it's not needed - default heartbeat is fine here.
+      env:
+        RABBITMQ_URL: amqp://admin:1q2w3e@127.0.0.1/loudhailer
+        REDIS_URL: redis://127.0.0.1
       run: |
-        poetry run pytest tests/e2e/test_channels.py
-        poetry run pytest tests/e2e/test_loudhailer.py
+        timeout 120 poetry run pytest -v -s tests/e2e/test_channels.py
+        timeout 120 poetry run pytest -v -s tests/e2e/test_loudhailer.py
     - name: Unit tests
       run: |
         poetry run pytest --ignore-glob=**/e2e
@@ -58,17 +86,17 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set up Python 3.10
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install poetry
+          pip install --only-binary :all: poetry==1.8.5
           poetry install
       - name: Generate coverage report
         run: |
